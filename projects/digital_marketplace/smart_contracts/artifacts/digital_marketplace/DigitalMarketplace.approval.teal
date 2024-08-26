@@ -1,0 +1,371 @@
+#pragma version 10
+
+smart_contracts.digital_marketplace.contract.DigitalMarketplace.approval_program:
+    txn NumAppArgs
+    bz main_bare_routing@10
+    method "allow_asset(pay,asset)void"
+    method "first_deposit(pay,axfer,uint64)void"
+    method "deposit(axfer)void"
+    method "set_price(uint64,asset)void"
+    method "withdraw(asset)void"
+    method "buy(address,asset,pay,uint64)void"
+    txna ApplicationArgs 0
+    match main_allow_asset_route@2 main_first_deposit_route@3 main_deposit_route@4 main_set_price_route@5 main_withdraw_route@6 main_buy_route@7
+    err // reject transaction
+
+main_allow_asset_route@2:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    txn GroupIndex
+    int 1
+    -
+    dup
+    gtxns TypeEnum
+    int pay
+    ==
+    assert // transaction type is pay
+    txna ApplicationArgs 1
+    btoi
+    txnas Assets
+    callsub allow_asset
+    int 1
+    return
+
+main_first_deposit_route@3:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    txn GroupIndex
+    int 2
+    -
+    dup
+    gtxns TypeEnum
+    int pay
+    ==
+    assert // transaction type is pay
+    txn GroupIndex
+    int 1
+    -
+    dup
+    gtxns TypeEnum
+    int axfer
+    ==
+    assert // transaction type is axfer
+    txna ApplicationArgs 1
+    callsub first_deposit
+    int 1
+    return
+
+main_deposit_route@4:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    txn GroupIndex
+    int 1
+    -
+    dup
+    gtxns TypeEnum
+    int axfer
+    ==
+    assert // transaction type is axfer
+    callsub deposit
+    int 1
+    return
+
+main_set_price_route@5:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    txna ApplicationArgs 1
+    txna ApplicationArgs 2
+    btoi
+    txnas Assets
+    callsub set_price
+    int 1
+    return
+
+main_withdraw_route@6:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    txna ApplicationArgs 1
+    btoi
+    txnas Assets
+    callsub withdraw
+    int 1
+    return
+
+main_buy_route@7:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    txna ApplicationArgs 1
+    txna ApplicationArgs 2
+    btoi
+    txnas Assets
+    txn GroupIndex
+    int 1
+    -
+    dup
+    gtxns TypeEnum
+    int pay
+    ==
+    assert // transaction type is pay
+    txna ApplicationArgs 3
+    btoi
+    callsub buy
+    int 1
+    return
+
+main_bare_routing@10:
+    txn OnCompletion
+    !
+    assert // reject transaction
+    txn ApplicationID
+    !
+    assert // is creating
+    int 1
+    return
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.allow_asset(mbr_pay: uint64, asset: uint64) -> void:
+allow_asset:
+    proto 2 0
+    global CurrentApplicationAddress
+    frame_dig -1
+    asset_holding_get AssetBalance
+    bury 1
+    !
+    assert
+    frame_dig -2
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    frame_dig -2
+    gtxns Amount
+    global AssetOptInMinBalance
+    ==
+    assert
+    itxn_begin
+    global CurrentApplicationAddress
+    int 0
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    frame_dig -1
+    itxn_field XferAsset
+    int axfer
+    itxn_field TypeEnum
+    int 0
+    itxn_field Fee
+    itxn_submit
+    retsub
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.first_deposit(mbr_pay: uint64, xfer: uint64, unitary_price: bytes) -> void:
+first_deposit:
+    proto 3 0
+    frame_dig -3
+    gtxns Sender
+    txn Sender
+    ==
+    assert
+    frame_dig -3
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    frame_dig -3
+    gtxns Amount
+    int 24900
+    ==
+    assert
+    txn Sender
+    frame_dig -2
+    gtxns XferAsset
+    itob
+    concat
+    dup
+    box_len
+    bury 1
+    !
+    assert
+    frame_dig -2
+    gtxns AssetReceiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    frame_dig -2
+    gtxns Sender
+    txn Sender
+    ==
+    assert
+    frame_dig -2
+    gtxns AssetAmount
+    dup
+    assert
+    itob
+    frame_dig -1
+    concat
+    box_put
+    retsub
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.deposit(xfer: uint64) -> void:
+deposit:
+    proto 1 0
+    txn Sender
+    frame_dig -1
+    gtxns XferAsset
+    itob
+    concat
+    dup
+    box_len
+    bury 1
+    assert
+    frame_dig -1
+    gtxns AssetReceiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    frame_dig -1
+    gtxns Sender
+    txn Sender
+    ==
+    assert
+    frame_dig -1
+    gtxns AssetAmount
+    dup
+    assert
+    dig 1
+    int 0
+    int 8
+    box_extract
+    btoi
+    +
+    itob
+    int 0
+    swap
+    box_replace
+    retsub
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.set_price(unitary_price: bytes, asset: uint64) -> void:
+set_price:
+    proto 2 0
+    txn Sender
+    frame_dig -1
+    itob
+    concat
+    int 8
+    frame_dig -2
+    box_replace
+    retsub
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.withdraw(asset: uint64) -> void:
+withdraw:
+    proto 1 0
+    txn Sender
+    frame_dig -1
+    itob
+    concat
+    dup
+    int 0
+    int 8
+    box_extract
+    btoi
+    swap
+    box_del
+    pop
+    itxn_begin
+    txn Sender
+    itxn_field AssetReceiver
+    itxn_field AssetAmount
+    frame_dig -1
+    itxn_field XferAsset
+    int axfer
+    itxn_field TypeEnum
+    int 0
+    itxn_field Fee
+    itxn_submit
+    itxn_begin
+    txn Sender
+    int 24900
+    itxn_field Amount
+    itxn_field Receiver
+    int pay
+    itxn_field TypeEnum
+    int 0
+    itxn_field Fee
+    itxn_submit
+    retsub
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.buy(owner: bytes, asset: uint64, buy_pay: uint64, amount: uint64) -> void:
+buy:
+    proto 4 0
+    frame_dig -3
+    itob
+    frame_dig -4
+    swap
+    concat
+    dup
+    int 8
+    dup
+    box_extract
+    btoi
+    frame_dig -2
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    assert
+    frame_dig -2
+    gtxns Sender
+    txn Sender
+    ==
+    assert
+    frame_dig -2
+    gtxns Amount
+    swap
+    frame_dig -1
+    *
+    ==
+    assert
+    dup
+    int 0
+    int 8
+    box_extract
+    btoi
+    frame_dig -1
+    -
+    itob
+    int 0
+    swap
+    box_replace
+    itxn_begin
+    txn Sender
+    frame_dig -1
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    frame_dig -3
+    itxn_field XferAsset
+    int axfer
+    itxn_field TypeEnum
+    int 0
+    itxn_field Fee
+    itxn_submit
+    retsub
