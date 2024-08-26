@@ -1,7 +1,50 @@
-from algopy import ARC4Contract, Asset, Global, Txn, UInt64, arc4, gtxn, itxn, op
+from algopy import (
+    ARC4Contract,
+    Asset,
+    BoxMap,
+    Global,
+    Txn,
+    UInt64,
+    arc4,
+    gtxn,
+    itxn,
+    subroutine,
+)
+
+
+class ListingKey(arc4.Struct):
+    owner: arc4.Address
+    asset: arc4.UInt64
+
+
+class ListingValue(arc4.Struct):
+    deposited: arc4.UInt64
+    unitary_price: arc4.UInt64
 
 
 class DigitalMarketplace(ARC4Contract):
+    def __init__(self) -> None:
+        self.listings = BoxMap(ListingKey, ListingValue)
+
+    @subroutine
+    def get_box_mbr(self) -> UInt64:
+        # Box: Key -> Value  // [address,asset_id] -> [quantity, price]
+        # Boxes MBR -> 0.0025 por Box + 0.0004 por cada byte
+        # MBR del caso de uso -> [32 Bytes, 8 Bytes] -> [8 Bytes, 8 Bytes] = 56 Bytes
+        # MBR del caso = prefix + 0.0025 + 0.0004*56
+        return (
+            2_500
+            + (
+                # Key length
+                self.listings.key_prefix.length
+                + 32
+                + 8
+                # Value length
+                + 8
+                + 8
+            )
+            * 400
+        )
 
     # Recibir o permitir assets de venta
     @arc4.abimethod
@@ -29,40 +72,42 @@ class DigitalMarketplace(ARC4Contract):
         xfer: gtxn.AssetTransferTransaction,
         unitary_price: arc4.UInt64,
     ) -> None:
-        # Box: Key -> Value  // [address,asset_id] -> [quantity, price]
-        # Boxes MBR -> 0.0025 por Box + 0.0004 por cada byte
-        # MBR del caso de uso -> [32 Bytes, 8 Bytes] -> [8 Bytes, 8 Bytes] = 56 Bytes
-        # MBR del caso = 0.0025 + 0.0004*56
 
         assert mbr_pay.sender == Txn.sender
         assert mbr_pay.receiver == Global.current_application_address
-        assert mbr_pay.amount == UInt64(2_500 + 400 * 56)
+        assert mbr_pay.amount == self.get_box_mbr()
 
-        box_key = Txn.sender.bytes + op.itob(xfer.xfer_asset.id)
-        _length, exists = op.Box.length(box_key)
-        assert not exists
+        box_key = ListingKey(
+            owner=arc4.Address(Txn.sender),
+            asset=arc4.UInt64(xfer.xfer_asset.id),
+        )
 
         assert xfer.asset_receiver == Global.current_application_address
         assert xfer.sender == Txn.sender
         assert xfer.asset_amount > 0
 
-        op.Box.put(box_key, op.itob(xfer.asset_amount) + unitary_price.bytes)
+        self.listings[box_key] = ListingValue(
+            deposited=arc4.UInt64(xfer.asset_amount),
+            unitary_price=unitary_price,
+        )
 
     @arc4.abimethod
     def deposit(
         self,
         xfer: gtxn.AssetTransferTransaction,
     ) -> None:
-        box_key = Txn.sender.bytes + op.itob(xfer.xfer_asset.id)
-        _length, exists = op.Box.length(box_key)
-        assert exists
+        box_key = ListingKey(
+            owner=arc4.Address(Txn.sender),
+            asset=arc4.UInt64(xfer.xfer_asset.id),
+        )
 
         assert xfer.asset_receiver == Global.current_application_address
         assert xfer.sender == Txn.sender
         assert xfer.asset_amount > 0
 
-        current_deposited = op.btoi(op.Box.extract(box_key, 0, 8))
-        op.Box.replace(box_key, 0, op.itob(current_deposited + xfer.asset_amount))
+        self.listings[box_key].deposited = arc4.UInt64(
+            self.listings[box_key].deposited.native + xfer.asset_amount
+        )
 
     # Funcion de modificar o definir el precio de venta
     @arc4.abimethod
@@ -71,32 +116,12 @@ class DigitalMarketplace(ARC4Contract):
         unitary_price: arc4.UInt64,
         asset: Asset,
     ) -> None:
-        box_key = Txn.sender.bytes + op.itob(asset.id)
+        box_key = ListingKey(
+            owner=arc4.Address(Txn.sender),
+            asset=arc4.UInt64(asset.id),
+        )
 
-        op.Box.replace(box_key, 8, unitary_price.bytes)
-
-    # Retirar sus ganancias y assets restantes
-    @arc4.abimethod
-    def withdraw(
-        self,
-        asset: Asset,
-    ) -> None:
-        box_key = Txn.sender.bytes + op.itob(asset.id)
-        current_deposited = op.btoi(op.Box.extract(box_key, 0, 8))
-        op.Box.delete(box_key)
-
-        itxn.AssetTransfer(
-            xfer_asset=asset,
-            asset_amount=current_deposited,
-            asset_receiver=Txn.sender,
-            fee=0,
-        ).submit()
-
-        itxn.Payment(
-            receiver=Txn.sender,
-            amount=UInt64(2_500 + 400 * 56),
-            fee=0,
-        ).submit()
+        self.listings[box_key].unitary_price = unitary_price
 
     # Funcion de compra de assets
     @arc4.abimethod
@@ -107,19 +132,53 @@ class DigitalMarketplace(ARC4Contract):
         buy_pay: gtxn.PaymentTransaction,
         amount: UInt64,
     ) -> None:
-        box_key = owner.bytes + op.itob(asset.id)
-        unitary_price = op.btoi(op.Box.extract(box_key, 8, 8))
+        box_key = ListingKey(
+            owner=arc4.Address(Txn.sender),
+            asset=arc4.UInt64(asset.id),
+        )
+
+        listing = self.listings[box_key].copy()
 
         assert buy_pay.receiver == Global.current_application_address
         assert buy_pay.sender == Txn.sender
-        assert buy_pay.amount == unitary_price * amount
+        assert buy_pay.amount == listing.unitary_price.native
 
-        current_deposited = op.btoi(op.Box.extract(box_key, 0, 8))
-        op.Box.replace(box_key, 0, op.itob(current_deposited - amount))
+        self.listings[box_key].deposited = arc4.UInt64(
+            listing.deposited.native - amount
+        )
 
         itxn.AssetTransfer(
             xfer_asset=asset,
             asset_receiver=Txn.sender,
             asset_amount=amount,
+            fee=0,
+        ).submit()
+
+    # Retirar sus ganancias y assets restantes
+    @arc4.abimethod
+    def withdraw(
+        self,
+        asset: Asset,
+    ) -> None:
+        box_key = ListingKey(
+            owner=arc4.Address(Txn.sender),
+            asset=arc4.UInt64(asset.id),
+        )
+
+        listing = self.listings[box_key].copy()
+
+        current_deposited = listing.deposited.native
+        del self.listings[box_key]
+
+        itxn.AssetTransfer(
+            xfer_asset=asset,
+            asset_amount=current_deposited,
+            asset_receiver=Txn.sender,
+            fee=0,
+        ).submit()
+
+        itxn.Payment(
+            receiver=Txn.sender,
+            amount=self.get_box_mbr(),
             fee=0,
         ).submit()
