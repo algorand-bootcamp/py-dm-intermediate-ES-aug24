@@ -2,15 +2,16 @@
 
 smart_contracts.digital_marketplace.contract.DigitalMarketplace.approval_program:
     txn NumAppArgs
-    bz main_bare_routing@10
+    bz main_bare_routing@11
     method "allow_asset(pay,asset)void"
     method "first_deposit(pay,axfer,uint64)void"
     method "deposit(axfer)void"
     method "set_price(uint64,asset)void"
-    method "buy(address,asset,pay,uint64)void"
+    method "buy(asset,pay,uint64,address)void"
     method "withdraw(asset)void"
+    method "get_listings_mbr()uint64"
     txna ApplicationArgs 0
-    match main_allow_asset_route@2 main_first_deposit_route@3 main_deposit_route@4 main_set_price_route@5 main_buy_route@6 main_withdraw_route@7
+    match main_allow_asset_route@2 main_first_deposit_route@3 main_deposit_route@4 main_set_price_route@5 main_buy_route@6 main_withdraw_route@7 main_get_listings_mbr_route@8
     err // reject transaction
 
 main_allow_asset_route@2:
@@ -100,7 +101,6 @@ main_buy_route@6:
     txn ApplicationID
     assert // is not creating
     txna ApplicationArgs 1
-    txna ApplicationArgs 2
     btoi
     txnas Assets
     txn GroupIndex
@@ -111,8 +111,9 @@ main_buy_route@6:
     int pay
     ==
     assert // transaction type is pay
-    txna ApplicationArgs 3
+    txna ApplicationArgs 2
     btoi
+    txna ApplicationArgs 3
     callsub buy
     int 1
     return
@@ -130,7 +131,22 @@ main_withdraw_route@7:
     int 1
     return
 
-main_bare_routing@10:
+main_get_listings_mbr_route@8:
+    txn OnCompletion
+    !
+    assert // OnCompletion is NoOp
+    txn ApplicationID
+    assert // is not creating
+    callsub get_listings_mbr
+    itob
+    byte 0x151f7c75
+    swap
+    concat
+    log
+    int 1
+    return
+
+main_bare_routing@11:
     txn OnCompletion
     !
     assert // reject transaction
@@ -291,12 +307,13 @@ set_price:
     retsub
 
 
-// smart_contracts.digital_marketplace.contract.DigitalMarketplace.buy(owner: bytes, asset: uint64, buy_pay: uint64, amount: uint64) -> void:
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.buy(asset: uint64, buy_pay: uint64, quantity: uint64, owner: bytes) -> void:
 buy:
     proto 4 0
-    txn Sender
-    frame_dig -3
+    frame_dig -4
     itob
+    frame_dig -1
+    swap
     concat
     byte "listings"
     swap
@@ -304,26 +321,28 @@ buy:
     dup
     box_get
     assert // check self.listings entry exists
-    frame_dig -2
+    frame_dig -3
     gtxns Receiver
-    global CurrentApplicationAddress
+    frame_dig -1
     ==
     assert
-    frame_dig -2
+    frame_dig -3
     gtxns Sender
     txn Sender
     ==
     assert
-    frame_dig -2
+    frame_dig -3
     gtxns Amount
     dig 1
     extract 8 8 // on error: Index access is out of bounds
     btoi
+    frame_dig -2
+    *
     ==
     assert
     extract 0 8 // on error: Index access is out of bounds
     btoi
-    frame_dig -1
+    frame_dig -2
     -
     itob
     dig 1
@@ -334,10 +353,10 @@ buy:
     box_put
     itxn_begin
     txn Sender
-    frame_dig -1
+    frame_dig -2
     itxn_field AssetAmount
     itxn_field AssetReceiver
-    frame_dig -3
+    frame_dig -4
     itxn_field XferAsset
     int axfer
     itxn_field TypeEnum
@@ -386,4 +405,11 @@ withdraw:
     int 0
     itxn_field Fee
     itxn_submit
+    retsub
+
+
+// smart_contracts.digital_marketplace.contract.DigitalMarketplace.get_listings_mbr() -> uint64:
+get_listings_mbr:
+    proto 0 1
+    callsub get_box_mbr
     retsub

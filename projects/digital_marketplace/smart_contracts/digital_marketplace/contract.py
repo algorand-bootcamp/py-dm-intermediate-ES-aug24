@@ -127,31 +127,30 @@ class DigitalMarketplace(ARC4Contract):
     @arc4.abimethod
     def buy(
         self,
-        owner: arc4.Address,
         asset: Asset,
         buy_pay: gtxn.PaymentTransaction,
-        amount: UInt64,
+        quantity: UInt64,
+        owner: arc4.Address,
     ) -> None:
         box_key = ListingKey(
-            owner=arc4.Address(Txn.sender),
+            owner=owner,
             asset=arc4.UInt64(asset.id),
         )
 
         listing = self.listings[box_key].copy()
 
-        assert buy_pay.receiver == Global.current_application_address
+        assert buy_pay.receiver.bytes == owner.bytes
         assert buy_pay.sender == Txn.sender
-        assert buy_pay.amount == listing.unitary_price.native
+        assert buy_pay.amount == listing.unitary_price.native * quantity
 
         self.listings[box_key].deposited = arc4.UInt64(
-            listing.deposited.native - amount
+            listing.deposited.native - quantity
         )
 
         itxn.AssetTransfer(
             xfer_asset=asset,
             asset_receiver=Txn.sender,
-            asset_amount=amount,
-            fee=0,
+            asset_amount=quantity,
         ).submit()
 
     # Retirar sus ganancias y assets restantes
@@ -182,3 +181,7 @@ class DigitalMarketplace(ARC4Contract):
             amount=self.get_box_mbr(),
             fee=0,
         ).submit()
+
+    @arc4.abimethod(readonly=True)
+    def get_listings_mbr(self) -> UInt64:
+        return self.get_box_mbr()

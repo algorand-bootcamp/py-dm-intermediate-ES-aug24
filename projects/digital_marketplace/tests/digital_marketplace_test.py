@@ -1,25 +1,25 @@
-from collections.abc import Generator
+# from collections.abc import Generator
 
-import pytest
-from algopy_testing import AlgopyTestContext, algopy_testing_context
+# import pytest
+# from algopy_testing import AlgopyTestContext, algopy_testing_context
 
-from smart_contracts.digital_marketplace.contract import DigitalMarketplace
-
-
-@pytest.fixture()
-def context() -> Generator[AlgopyTestContext, None, None]:
-    with algopy_testing_context() as ctx:
-        yield ctx
-        ctx.reset()
+# from smart_contracts.digital_marketplace.contract import DigitalMarketplace
 
 
-def test_hello(context: AlgopyTestContext) -> None:
-    # Arrange
-    dummy_input = context.any.string(length=10)
-    contract = DigitalMarketplace()
+# @pytest.fixture()
+# def context() -> Generator[AlgopyTestContext, None, None]:
+#     with algopy_testing_context() as ctx:
+#         yield ctx
+#         ctx.reset()
 
-    # Act
-    output = contract.hello(dummy_input)
 
-    # Assert
-    assert output == f"Hello, {dummy_input}"
+# def test_hello(context: AlgopyTestContext) -> None:
+#     # Arrange
+#     dummy_input = context.any.string(length=10)
+#     contract = DigitalMarketplace()
+
+#     # Act
+#     output = contract.hello(dummy_input)
+
+#     # Assert
+#     assert output == f"Hello, {dummy_input}"
